@@ -1,0 +1,100 @@
+FROM jcwright/wxpython:stretch
+MAINTAINER John C. Wright <jcwright@mit.edu>
+
+#update packages
+
+WORKDIR /home/user
+USER user
+ENV HOME /home/user
+RUN mkdir $HOME/src
+
+
+RUN sudo apt-get install -y apt-utils
+RUN sudo apt-get update
+
+#editor and ssh (needed for mpirun)
+RUN sudo apt-get install -y emacs
+RUN sudo apt-get install -y openssh-client
+
+#opencascade required by gmesh
+RUN sudo apt-get install -y libfreetype6-dev tcl-dev tk-dev \
+      libxt-dev libfreeimage-dev libtbb-dev libgl2ps-dev libgl1-mesa-dev\
+      libglu1-mesa-dev libxt-dev libxmu-dev libxi-dev
+#RUN sudo apt-get install -y mesa-common-dev libglu1-mesa-dev freeglut3-dev
+#RUN sudo apt-get install -y libpng-dev
+#RUN sudo apt-get install --reinstall libopenmpi-dev openmpi-common openmpi-bin 
+RUN sudo apt-get autoremove -y
+RUN sudo apt-get install -y iputils-ping
+
+
+#Takes forever
+#COPY opencascade-7.2.0.tgz .
+#RUN tar xfz opencascade-7.2.0.tgz
+#RUN cd opencascade-7.2.0 && mkdir cmbuild
+#WORKDIR $HOME/src/opencascade-7.2.0/cmbuild
+#RUN cmake .. -DCMAKE_INSTALL_PREFIX=$HOME && make && make install
+
+#get sources needed for MFEM
+WORKDIR $HOME/src
+RUN wget http://glaros.dtc.umn.edu/gkhome/fetch/sw/metis/metis-5.1.0.tar.gz
+RUN wget http://glaros.dtc.umn.edu/gkhome/fetch/sw/parmetis/parmetis-4.0.3.tar.gz
+RUN wget https://computation.llnl.gov/projects/hypre-scalable-linear-solvers-multigrid-methods/download/hypre-2.11.2.tar.gz
+RUN wget http://crd-legacy.lbl.gov/~xiaoye/SuperLU/superlu_dist_5.1.0.tar.gz
+
+#RUN wget https://github.com/mfem/mfem/archive/v3.3.2.tar.gz
+RUN git clone https://github.com/mfem/mfem.git
+RUN cd mfem; git checkout plasma-dev
+RUN cd mfem; git pull
+
+RUN tar -zxf metis-5.1.0.tar.gz
+RUN tar -zxf parmetis-4.0.3.tar.gz
+RUN tar -zxf hypre-2.11.2.tar.gz
+RUN tar -zxf superlu_dist_5.1.0.tar.gz
+
+#Install packages
+WORKDIR $HOME/src/metis-5.1.0
+RUN make config shared=1 prefix=$HOME
+RUN make && make install
+
+WORKDIR $HOME/src/parmetis-4.0.3
+RUN make config shared=1 prefix=$HOME && make install
+
+RUN mkdir -p $HOME/src/hypre-2.11.2/src/cmbuild
+WORKDIR $HOME/src/hypre-2.11.2/src/cmbuild
+RUN pwd
+RUN cmake .. -DCMAKE_VERBOSE_MAKEFILE=1 -DHYPRE_INSTALL_PREFIX=$HOME -DHYPRE_SHARED=1 -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx
+RUN make verbose=1 && make install
+
+WORKDIR $HOME/src/SuperLU_DIST_5.1.0
+COPY superlu_make.inc make.inc
+RUN sudo apt-get install -y libopenblas-dev
+RUN make
+
+WORKDIR $HOME/src/mfem
+COPY user.mk $HOME/src/mfem/config
+RUN make config
+RUN make all; exit 0
+WORKDIR $HOME/src/mfem/miniapps/plasma
+RUN make; exit 0
+
+#GMSH (needs opencascade) and GLVIS
+WORKDIR $HOME/src
+#RUN wget http://gmsh.info/src/gmsh-4.3.0-source.tgz
+#RUN sudo apt-get install -y libfltk1.1-dev
+
+RUN wget https://bit.ly/glvis-3-4
+RUN tar xfz glvis-3-4
+WORKDIR $HOME/src/glvis-3.4
+# Fix missing X11 symbol
+RUN sed -i '/PTHREAD/ s/$/ -lX11/' makefile
+RUN make MFEM_DIR=../mfem
+RUN cp glvis glvis-keygen.sh $HOME/bin
+
+WORKDIR /home/user
+RUN sed -i '/x11vnc/d' .profile
+RUN echo "x11vnc -R -repeat &>/dev/null" >> /home/user/.bashrc
+ENV LD_LIBRARY_PATH $HOME/lib
+USER root
+RUN echo $PWD . DO NOT CLOSE THE XTERM
+ENV APP "x11vnc -R -repeat &>/dev/null ; xterm"
+# docker build -t jcwright/mfem -f Dockerfile.mfem .
