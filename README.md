@@ -42,5 +42,7 @@ Launch image and open desktop
     DISPLAY=192.xxx.xxx.xxx #value from docker-machine, or localhost depending on windows docker implementation
     docker run -it --rm --name mfem -e DISPLAY=$DISPLAY -p 6080:6080 jcwright/mfem
     #may need to authorize connection depending on x11 emulator set up.
-      
+   
+This last option may have timeout issues with x11.
+
       
